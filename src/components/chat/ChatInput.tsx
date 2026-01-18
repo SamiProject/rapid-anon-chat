@@ -1,14 +1,15 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 
 interface ChatInputProps {
   onSend: (message: string) => void;
+  onTyping?: () => void;
   disabled?: boolean;
 }
 
-const ChatInput = ({ onSend, disabled }: ChatInputProps) => {
+const ChatInput = ({ onSend, onTyping, disabled }: ChatInputProps) => {
   const [message, setMessage] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -18,6 +19,13 @@ const ChatInput = ({ onSend, disabled }: ChatInputProps) => {
       setMessage("");
     }
   };
+
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setMessage(e.target.value);
+    if (e.target.value && onTyping) {
+      onTyping();
+    }
+  }, [onTyping]);
 
   return (
     <motion.form
@@ -29,7 +37,7 @@ const ChatInput = ({ onSend, disabled }: ChatInputProps) => {
       <input
         type="text"
         value={message}
-        onChange={(e) => setMessage(e.target.value)}
+        onChange={handleChange}
         placeholder="Type a message..."
         disabled={disabled}
         className="flex-1 bg-input border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all duration-200"

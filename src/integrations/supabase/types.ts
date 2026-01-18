@@ -14,7 +14,150 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      chat_rooms: {
+        Row: {
+          created_at: string
+          ended_at: string | null
+          id: string
+          is_active: boolean
+          user1_session: string
+          user2_session: string
+        }
+        Insert: {
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          is_active?: boolean
+          user1_session: string
+          user2_session: string
+        }
+        Update: {
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          is_active?: boolean
+          user1_session?: string
+          user2_session?: string
+        }
+        Relationships: []
+      }
+      messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          room_id: string
+          sender_session: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          room_id: string
+          sender_session: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          room_id?: string
+          sender_session?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "chat_rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reports: {
+        Row: {
+          created_at: string
+          id: string
+          reason: string | null
+          reported_session: string
+          reporter_session: string
+          room_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          reason?: string | null
+          reported_session: string
+          reporter_session: string
+          room_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          reason?: string | null
+          reported_session?: string
+          reporter_session?: string
+          room_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reports_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "chat_rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      typing_status: {
+        Row: {
+          id: string
+          is_typing: boolean
+          room_id: string
+          session_id: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          is_typing?: boolean
+          room_id: string
+          session_id: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          is_typing?: boolean
+          room_id?: string
+          session_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "typing_status_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "chat_rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      waiting_queue: {
+        Row: {
+          created_at: string
+          id: string
+          session_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          session_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          session_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

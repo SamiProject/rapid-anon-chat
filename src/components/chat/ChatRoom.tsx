@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import ChatHeader from "./ChatHeader";
 import ChatMessage from "./ChatMessage";
@@ -8,21 +8,23 @@ import MatchingAnimation from "./MatchingAnimation";
 import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-
-type ChatState = "idle" | "matching" | "connected" | "disconnected";
-
-interface Message {
-  id: string;
-  text: string;
-  isOwn: boolean;
-  timestamp: string;
-}
+import { useChat } from "@/hooks/useChat";
 
 const ChatRoom = () => {
-  const [chatState, setChatState] = useState<ChatState>("idle");
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [isTyping, setIsTyping] = useState(false);
+  const {
+    status,
+    messages,
+    isPartnerTyping,
+    startMatching,
+    sendMessage,
+    setTyping,
+    disconnect,
+    findNew,
+    reportUser
+  } = useChat();
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -30,81 +32,57 @@ const ChatRoom = () => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isTyping]);
+  }, [messages, isPartnerTyping]);
+
+  useEffect(() => {
+    if (status === 'connected') {
+      toast.success("You're now connected with a stranger!");
+    }
+  }, [status]);
 
   const handleStartChat = () => {
-    setChatState("matching");
-    setMessages([]);
+    startMatching();
+  };
+
+  const handleSendMessage = async (text: string) => {
+    await sendMessage(text);
+    // Clear typing indicator when sending
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    await setTyping(false);
+  };
+
+  const handleTyping = useCallback(() => {
+    setTyping(true);
     
-    // Simulate matching delay
-    setTimeout(() => {
-      setChatState("connected");
-      toast.success("You're now connected with a stranger!");
-      
-      // Simulate welcome message from stranger
-      setTimeout(() => {
-        setIsTyping(true);
-        setTimeout(() => {
-          setIsTyping(false);
-          setMessages([{
-            id: "1",
-            text: "Hey! 👋 Nice to meet you!",
-            isOwn: false,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          }]);
-        }, 1500);
-      }, 1000);
-    }, 2500);
-  };
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    
+    typingTimeoutRef.current = setTimeout(() => {
+      setTyping(false);
+    }, 2000);
+  }, [setTyping]);
 
-  const handleSendMessage = (text: string) => {
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      text,
-      isOwn: true,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-    setMessages((prev) => [...prev, newMessage]);
-
-    // Simulate response
-    setTimeout(() => {
-      setIsTyping(true);
-      setTimeout(() => {
-        setIsTyping(false);
-        const responses = [
-          "That's interesting! Tell me more.",
-          "Haha, I feel you! 😄",
-          "No way! That's so cool.",
-          "I totally agree with that.",
-          "Interesting perspective! What else?",
-        ];
-        setMessages((prev) => [...prev, {
-          id: Date.now().toString(),
-          text: responses[Math.floor(Math.random() * responses.length)],
-          isOwn: false,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }]);
-      }, 1000 + Math.random() * 2000);
-    }, 500);
-  };
-
-  const handleDisconnect = () => {
-    setChatState("disconnected");
+  const handleDisconnect = async () => {
+    await disconnect();
     toast.info("You've disconnected from the chat.");
   };
 
-  const handleReport = () => {
+  const handleReport = async () => {
+    await reportUser("User reported");
     toast.success("Report submitted. Thank you for helping keep our community safe.");
   };
 
   const handleNewChat = () => {
-    handleStartChat();
+    findNew();
   };
 
   return (
     <div className="flex flex-col h-full bg-background rounded-2xl border border-border overflow-hidden shadow-card">
       <AnimatePresence mode="wait">
-        {chatState === "idle" && (
+        {status === "idle" && (
           <motion.div
             key="idle"
             initial={{ opacity: 0, scale: 0.95 }}
@@ -123,7 +101,7 @@ const ChatRoom = () => {
               Ready to Connect?
             </h2>
             <p className="text-muted-foreground mb-8 max-w-sm">
-              Start a conversation with a random stranger. No sign-up, completely anonymous.
+              Start a conversation with a real person. No sign-up, completely anonymous.
             </p>
             <Button variant="hero" size="xl" onClick={handleStartChat}>
               Start Chat
@@ -131,7 +109,7 @@ const ChatRoom = () => {
           </motion.div>
         )}
 
-        {chatState === "matching" && (
+        {status === "matching" && (
           <motion.div
             key="matching"
             initial={{ opacity: 0 }}
@@ -143,7 +121,7 @@ const ChatRoom = () => {
           </motion.div>
         )}
 
-        {(chatState === "connected" || chatState === "disconnected") && (
+        {(status === "connected" || status === "disconnected") && (
           <motion.div
             key="chat"
             initial={{ opacity: 0 }}
@@ -151,7 +129,7 @@ const ChatRoom = () => {
             className="flex flex-col h-full"
           >
             <ChatHeader
-              isConnected={chatState === "connected"}
+              isConnected={status === "connected"}
               onDisconnect={handleDisconnect}
               onReport={handleReport}
             />
@@ -160,17 +138,17 @@ const ChatRoom = () => {
               {messages.map((msg) => (
                 <ChatMessage
                   key={msg.id}
-                  message={msg.text}
+                  message={msg.content}
                   isOwn={msg.isOwn}
-                  timestamp={msg.timestamp}
+                  timestamp={msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 />
               ))}
-              {isTyping && <TypingIndicator />}
+              {isPartnerTyping && <TypingIndicator />}
               <div ref={messagesEndRef} />
             </div>
 
-            {chatState === "connected" ? (
-              <ChatInput onSend={handleSendMessage} />
+            {status === "connected" ? (
+              <ChatInput onSend={handleSendMessage} onTyping={handleTyping} />
             ) : (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
