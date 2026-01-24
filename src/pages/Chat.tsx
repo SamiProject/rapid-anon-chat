@@ -1,28 +1,42 @@
 import { motion } from "framer-motion";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 import ChatRoom from "@/components/chat/ChatRoom";
 import { Button } from "@/components/ui/button";
+import { useOnlineUsers } from "@/hooks/useOnlineUsers";
+import { useEffect } from "react";
 
 const Chat = () => {
+  const { onlineCount, refreshCount } = useOnlineUsers();
+
+  // Refresh count on mount
+  useEffect(() => {
+    refreshCount();
+  }, [refreshCount]);
+
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-purple-900/20 flex flex-col">
       {/* Header */}
       <header className="border-b border-border bg-card/50 backdrop-blur-lg">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <Link to="/">
-            <Button variant="ghost" size="sm" className="gap-2">
+            <Button variant="ghost" size="sm" className="gap-2 hover:bg-purple-500/20">
               <ArrowLeft className="h-4 w-4" />
               Back to Home
             </Button>
           </Link>
           
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
-            <span className="text-sm text-muted-foreground">
-              1,247 online
+          <motion.div 
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-pink-500/20 via-purple-500/20 to-cyan-500/20 border border-purple-500/30"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+          >
+            <Users className="h-4 w-4 text-purple-400" />
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-sm font-medium bg-gradient-to-r from-pink-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
+              {onlineCount.toLocaleString()} online
             </span>
-          </div>
+          </motion.div>
         </div>
       </header>
 
