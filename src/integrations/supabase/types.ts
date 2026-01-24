@@ -73,6 +73,39 @@ export type Database = {
           },
         ]
       }
+      online_users: {
+        Row: {
+          created_at: string
+          gender: string
+          id: string
+          last_seen: string
+          location: string
+          looking_for: string
+          name: string
+          session_id: string
+        }
+        Insert: {
+          created_at?: string
+          gender: string
+          id?: string
+          last_seen?: string
+          location: string
+          looking_for: string
+          name: string
+          session_id: string
+        }
+        Update: {
+          created_at?: string
+          gender?: string
+          id?: string
+          last_seen?: string
+          location?: string
+          looking_for?: string
+          name?: string
+          session_id?: string
+        }
+        Relationships: []
+      }
       reports: {
         Row: {
           created_at: string
@@ -143,17 +176,29 @@ export type Database = {
       waiting_queue: {
         Row: {
           created_at: string
+          gender: string | null
           id: string
+          location: string | null
+          looking_for: string | null
+          name: string | null
           session_id: string
         }
         Insert: {
           created_at?: string
+          gender?: string | null
           id?: string
+          location?: string | null
+          looking_for?: string | null
+          name?: string | null
           session_id: string
         }
         Update: {
           created_at?: string
+          gender?: string | null
           id?: string
+          location?: string | null
+          looking_for?: string | null
+          name?: string | null
           session_id?: string
         }
         Relationships: []

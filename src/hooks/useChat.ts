@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useSessionId } from './useSessionId';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
-export type ChatStatus = 'idle' | 'matching' | 'connected' | 'disconnected';
+export type ChatStatus = 'idle' | 'profile' | 'matching' | 'connected' | 'disconnected';
 
 export interface Message {
   id: string;
@@ -12,13 +12,29 @@ export interface Message {
   timestamp: Date;
 }
 
+export interface PartnerInfo {
+  name: string;
+  location: string;
+  gender: string;
+}
+
+export interface UserProfile {
+  name: string;
+  location: string;
+  gender: 'male' | 'female' | 'other';
+  lookingFor: 'male' | 'female' | 'everyone';
+}
+
 export function useChat() {
   const sessionId = useSessionId();
   const [status, setStatus] = useState<ChatStatus>('idle');
   const [messages, setMessages] = useState<Message[]>([]);
   const [roomId, setRoomId] = useState<string | null>(null);
   const [partnerSession, setPartnerSession] = useState<string | null>(null);
+  const [partnerInfo, setPartnerInfo] = useState<PartnerInfo | null>(null);
   const [isPartnerTyping, setIsPartnerTyping] = useState(false);
+  const [partnerLeft, setPartnerLeft] = useState(false);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const matchingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -49,58 +65,88 @@ export function useChat() {
       .eq('id', roomId);
   }, [roomId]);
 
-  // Start matching
-  const startMatching = useCallback(async () => {
+  // Start the chat flow - show profile form
+  const initiateChat = useCallback(() => {
+    setStatus('profile');
+    setPartnerLeft(false);
+    setPartnerInfo(null);
+  }, []);
+
+  // Start matching after profile is submitted
+  const startMatching = useCallback(async (profile: UserProfile) => {
     if (!sessionId) return;
     
+    setUserProfile(profile);
     setStatus('matching');
     setMessages([]);
     setRoomId(null);
     setPartnerSession(null);
+    setPartnerInfo(null);
+    setPartnerLeft(false);
 
-    // Add to queue
+    // Add to queue with profile info
     await supabase.from('waiting_queue').upsert({ 
       session_id: sessionId,
+      name: profile.name,
+      location: profile.location,
+      gender: profile.gender,
+      looking_for: profile.lookingFor,
       created_at: new Date().toISOString()
     });
 
+    // Function to check if user matches preferences
+    const isMatch = (userLookingFor: string, otherGender: string, otherLookingFor: string, myGender: string) => {
+      const iLikeThemGender = userLookingFor === 'everyone' || userLookingFor === otherGender;
+      const theyLikeMeGender = otherLookingFor === 'everyone' || otherLookingFor === myGender;
+      return iLikeThemGender && theyLikeMeGender;
+    };
+
     // Try to find a match
     const tryMatch = async () => {
-      // Get oldest waiting user that's not us
+      // Get waiting users that match our preferences
       const { data: waitingUsers } = await supabase
         .from('waiting_queue')
         .select('*')
         .neq('session_id', sessionId)
-        .order('created_at', { ascending: true })
-        .limit(1);
+        .order('created_at', { ascending: true });
 
       if (waitingUsers && waitingUsers.length > 0) {
-        const partner = waitingUsers[0];
-        
-        // Create chat room
-        const { data: room, error } = await supabase
-          .from('chat_rooms')
-          .insert({
-            user1_session: sessionId,
-            user2_session: partner.session_id,
-            is_active: true
-          })
-          .select()
-          .single();
+        // Find a compatible match
+        const match = waitingUsers.find(user => 
+          isMatch(profile.lookingFor, user.gender || 'other', user.looking_for || 'everyone', profile.gender)
+        );
 
-        if (room && !error) {
-          // Remove both from queue
-          await supabase.from('waiting_queue').delete().in('session_id', [sessionId, partner.session_id]);
-          
-          if (matchingIntervalRef.current) {
-            clearInterval(matchingIntervalRef.current);
-            matchingIntervalRef.current = null;
+        if (match) {
+          // Create chat room
+          const { data: room, error } = await supabase
+            .from('chat_rooms')
+            .insert({
+              user1_session: sessionId,
+              user2_session: match.session_id,
+              is_active: true
+            })
+            .select()
+            .single();
+
+          if (room && !error) {
+            // Remove both from queue
+            await supabase.from('waiting_queue').delete().in('session_id', [sessionId, match.session_id]);
+            
+            if (matchingIntervalRef.current) {
+              clearInterval(matchingIntervalRef.current);
+              matchingIntervalRef.current = null;
+            }
+            
+            setRoomId(room.id);
+            setPartnerSession(match.session_id);
+            setPartnerInfo({
+              name: match.name || 'Stranger',
+              location: match.location || 'Unknown',
+              gender: match.gender || 'other'
+            });
+            setStatus('connected');
+            return true;
           }
-          
-          setRoomId(room.id);
-          setPartnerSession(partner.session_id);
-          setStatus('connected');
-          return true;
         }
       }
       return false;
@@ -110,7 +156,7 @@ export function useChat() {
     const matched = await tryMatch();
     
     if (!matched) {
-      // Poll for matches (in case someone creates a room with us)
+      // Poll for matches
       matchingIntervalRef.current = setInterval(async () => {
         // Check if someone matched with us
         const { data: rooms } = await supabase
@@ -122,8 +168,15 @@ export function useChat() {
 
         if (rooms && rooms.length > 0) {
           const room = rooms[0];
-          const partner = room.user1_session === sessionId ? room.user2_session : room.user1_session;
+          const partnerSessionId = room.user1_session === sessionId ? room.user2_session : room.user1_session;
           
+          // Get partner info from online_users or waiting_queue
+          const { data: partnerData } = await supabase
+            .from('online_users')
+            .select('name, location, gender')
+            .eq('session_id', partnerSessionId)
+            .maybeSingle();
+
           await supabase.from('waiting_queue').delete().eq('session_id', sessionId);
           
           if (matchingIntervalRef.current) {
@@ -132,7 +185,12 @@ export function useChat() {
           }
           
           setRoomId(room.id);
-          setPartnerSession(partner);
+          setPartnerSession(partnerSessionId);
+          setPartnerInfo({
+            name: partnerData?.name || 'Stranger',
+            location: partnerData?.location || 'Unknown',
+            gender: partnerData?.gender || 'other'
+          });
           setStatus('connected');
         } else {
           // Try to match with someone
@@ -200,6 +258,7 @@ export function useChat() {
         (payload) => {
           const room = payload.new as any;
           if (!room.is_active) {
+            setPartnerLeft(true);
             setStatus('disconnected');
           }
         }
@@ -286,13 +345,16 @@ export function useChat() {
     setPartnerSession(null);
   }, [cleanup, leaveQueue, endRoom]);
 
-  // Find new partner
+  // Find new partner - always show profile form again for fresh chat
   const findNew = useCallback(async () => {
     await cleanup();
     await endRoom();
     setMessages([]);
-    await startMatching();
-  }, [cleanup, endRoom, startMatching]);
+    setPartnerLeft(false);
+    setPartnerInfo(null);
+    setUserProfile(null);
+    setStatus('profile');
+  }, [cleanup, endRoom]);
 
   // Report user
   const reportUser = useCallback(async (reason?: string) => {
@@ -320,6 +382,10 @@ export function useChat() {
     status,
     messages,
     isPartnerTyping,
+    partnerInfo,
+    partnerLeft,
+    userProfile,
+    initiateChat,
     startMatching,
     sendMessage,
     setTyping,
