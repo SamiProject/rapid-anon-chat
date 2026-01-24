@@ -170,12 +170,29 @@ export function useChat() {
           const room = rooms[0];
           const partnerSessionId = room.user1_session === sessionId ? room.user2_session : room.user1_session;
           
-          // Get partner info from online_users or waiting_queue
-          const { data: partnerData } = await supabase
+          // Get partner info - try online_users first, then waiting_queue
+          let partnerData: { name: string | null; location: string | null; gender: string | null } | null = null;
+          
+          const { data: onlineData } = await supabase
             .from('online_users')
             .select('name, location, gender')
             .eq('session_id', partnerSessionId)
             .maybeSingle();
+          
+          if (onlineData?.name) {
+            partnerData = onlineData;
+          } else {
+            // Fallback to waiting_queue data
+            const { data: queueData } = await supabase
+              .from('waiting_queue')
+              .select('name, location, gender')
+              .eq('session_id', partnerSessionId)
+              .maybeSingle();
+            
+            if (queueData?.name) {
+              partnerData = queueData;
+            }
+          }
 
           await supabase.from('waiting_queue').delete().eq('session_id', sessionId);
           
@@ -310,29 +327,42 @@ export function useChat() {
       }]);
     }
 
-    // Clear typing status
+    // Clear typing status - use update if exists, or insert
     await supabase
       .from('typing_status')
-      .upsert({
-        room_id: roomId,
-        session_id: sessionId,
-        is_typing: false,
-        updated_at: new Date().toISOString()
-      });
+      .update({ is_typing: false, updated_at: new Date().toISOString() })
+      .eq('room_id', roomId)
+      .eq('session_id', sessionId);
   }, [roomId, sessionId]);
 
   // Update typing status
   const setTyping = useCallback(async (isTyping: boolean) => {
     if (!roomId || !sessionId) return;
 
-    await supabase
+    // First try to update existing record
+    const { data: existing } = await supabase
       .from('typing_status')
-      .upsert({
-        room_id: roomId,
-        session_id: sessionId,
-        is_typing: isTyping,
-        updated_at: new Date().toISOString()
-      });
+      .select('id')
+      .eq('room_id', roomId)
+      .eq('session_id', sessionId)
+      .maybeSingle();
+
+    if (existing) {
+      await supabase
+        .from('typing_status')
+        .update({ is_typing: isTyping, updated_at: new Date().toISOString() })
+        .eq('room_id', roomId)
+        .eq('session_id', sessionId);
+    } else {
+      await supabase
+        .from('typing_status')
+        .insert({
+          room_id: roomId,
+          session_id: sessionId,
+          is_typing: isTyping,
+          updated_at: new Date().toISOString()
+        });
+    }
   }, [roomId, sessionId]);
 
   // Disconnect
